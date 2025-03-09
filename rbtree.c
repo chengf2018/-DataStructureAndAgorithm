@@ -10,8 +10,33 @@
 4.每个红色结点的两个子结点都是黑色
 5.所有叶子节点（NIL节点）都是黑色
 
-红黑树说明参考：https://cloud.tencent.com/developer/article/1879082
- */
+
+插入双红节点修复情况分类：
+1. 叔叔节点 U 为红色
+情况描述：当叔叔节点 U 是红色时，只需要进行颜色调整即可。
+调整步骤：
+将父节点 P 和叔叔节点 U 染成黑色。
+将祖父节点 G 染成红色。
+把祖父节点 G 当作新的当前节点，继续向上检查是否还存在双红冲突。
+
+2. 叔叔节点 U 为黑色，且 N、P、G 呈直线型
+情况细分：
+左左情况（P 是 G 的左子节点，N 是 P 的左子节点）：
+调整步骤：以祖父节点 G 为支点进行右旋操作，然后交换父节点 P 和祖父节点 G 的颜色。
+右右情况（P 是 G 的右子节点，N 是 P 的右子节点）：
+调整步骤：以祖父节点 G 为支点进行左旋操作，然后交换父节点 P 和祖父节点 G 的颜色。
+
+3. 叔叔节点 U 为黑色，且 N、P、G 呈折线型
+情况细分：
+左右情况（P 是 G 的左子节点，N 是 P 的右子节点）：
+调整步骤：先以父节点 P 为支点进行左旋操作，将其转换为左左情况，然后按照左左情况进行处理。
+
+右左情况（P 是 G 的右子节点，N 是 P 的左子节点）：
+调整步骤：先以父节点 P 为支点进行右旋操作，将其转换为右右情况，然后按照右右情况进行处理。
+
+
+
+*/
 
 
 enum RB_TREE_COLOR {
@@ -39,6 +64,7 @@ create_rbtree() {
     rb_tree_t *rb = malloc(sizeof(rb_tree_t));
     rb->root = NULL;
     rb->count = 0;
+    return rb;
 }
 
 static void
@@ -52,15 +78,15 @@ left_rotate(rb_tree_t *rb, rb_node_t *cur_node) {
 
     right->parent = parent;
     
-    if (parent == NULL) rb->root = right;
-    
-    cur_node->parent = right;
-    right->left = cur_node;
-    
-    if (parent->left == cur_node)
+    if (parent == NULL)
+        rb->root = right;
+    else if (parent->left == cur_node)
         parent->left = right;
     else
         parent->right = right;
+
+    cur_node->parent = right;
+    right->left = cur_node;
 }
 
 static void
@@ -74,18 +100,17 @@ right_rotate(rb_tree_t *rb, rb_node_t *cur_node) {
     
     left->parent = parent;
     if (parent == NULL) rb->root = left;
-
-    cur_node->parent = left;
-    left->right = cur_node;
- 
-    if (parent->left == cur_node)
+    else if (parent->left == cur_node)
         parent->left = left;
     else
         parent->right = left;
+
+    cur_node->parent = left;
+    left->right = cur_node; 
 }
 
 static void
-adjust_node(rb_tree_t *rb, rb_node_t *cur_node) {
+double_red_adjust(rb_tree_t *rb, rb_node_t *cur_node) {
     rb_node_t *parent = cur_node->parent;
 
     // 如果父亲节点是黑色，那么无需调整
@@ -96,22 +121,42 @@ adjust_node(rb_tree_t *rb, rb_node_t *cur_node) {
 
     // 父亲节点是红色，那么就需要调整了
     if (uncel && uncel->color == RED) {
-        //情况1：叔叔节点为红色
+        //场景1：叔叔节点为红色
         parent->color = BLACK;
         uncel->color = BLACK;
         grandparent->color = RED;
-        adjust_node(rb, grandparent);
+        double_red_adjust(rb, grandparent);
     } else {
-        if (cur_node == parent->right) {
-            //情况2： 叔叔节点为黑色，且当前节点是父节点的右孩子
-            left_rotate(rb, parent);
-            adjust_node(rb, parent);
+        if (grandparent->left == parent) {
+            if (cur_node == parent->left) {
+                //场景2-情况1： 叔叔节点为黑色，且当前节点是父节点的左孩子
+                parent->color = BLACK;
+                grandparent->color = RED;
+                right_rotate(rb, grandparent);
+                
+            } else {
+               //场景2-情况2： 叔叔节点为黑色，且当前节点是父节点的右孩子
+               cur_node->color = BLACK;
+               grandparent->color = RED;
+               left_rotate(rb, parent);
+               right_rotate(rb, grandparent);
+            }
         } else {
-            //情况3： 叔叔节点为黑色，且当前节点是父节点的左孩子
-            parent->color = BLACK;
-            grandparent->color = RED;
-            right_rotate(rb, grandparent);
+            if (cur_node == parent->left) {
+                //场景3-情况1： 叔叔节点为黑色，且当前节点是父节点的左孩子
+                parent->color = BLACK;
+                grandparent->color = RED;
+                left_rotate(rb, grandparent);
+                
+            } else {
+               //场景3-情况2： 叔叔节点为黑色，且当前节点是父节点的右孩子
+               cur_node->color = BLACK;
+               grandparent->color = RED;
+               left_rotate(rb, parent);
+               right_rotate(rb, grandparent);
+            }
         }
+        
     }
 }
 
@@ -143,7 +188,10 @@ rbtree_insert(rb_tree_t *rb, int key) {
     else
         parent->right = new_node;
 
-    adjust_node(rb, new_node);
+    double_red_adjust(rb, new_node);
+
+    if (rb->root->color == RED)
+        rb->root->color = BLACK;
 }
 
 void
