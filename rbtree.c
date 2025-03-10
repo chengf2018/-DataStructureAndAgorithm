@@ -110,11 +110,11 @@ right_rotate(rb_tree_t *rb, rb_node_t *cur_node) {
 }
 
 static void
-double_red_adjust(rb_tree_t *rb, rb_node_t *cur_node) {
+fix_double_red(rb_tree_t *rb, rb_node_t *cur_node) {
     rb_node_t *parent = cur_node->parent;
 
     // 如果父亲节点是黑色，那么无需调整
-    if (parent->color == BLACK) return;
+    if (!parent || parent->color == BLACK) return;
 
     rb_node_t *grandparent = parent->parent;
     rb_node_t *uncel = (parent == grandparent->left) ? grandparent->right : grandparent->left;
@@ -125,35 +125,30 @@ double_red_adjust(rb_tree_t *rb, rb_node_t *cur_node) {
         parent->color = BLACK;
         uncel->color = BLACK;
         grandparent->color = RED;
-        double_red_adjust(rb, grandparent);
+        fix_double_red(rb, grandparent);
     } else {
         if (grandparent->left == parent) {
             if (cur_node == parent->left) {
-                //场景2-情况1： 叔叔节点为黑色，且当前节点是父节点的左孩子
+                //场景2-左左
                 parent->color = BLACK;
                 grandparent->color = RED;
                 right_rotate(rb, grandparent);
                 
             } else {
-               //场景2-情况2： 叔叔节点为黑色，且当前节点是父节点的右孩子
-               cur_node->color = BLACK;
-               grandparent->color = RED;
+               //场景3-左右
                left_rotate(rb, parent);
-               right_rotate(rb, grandparent);
+               fix_double_red(rb, parent);
             }
         } else {
-            if (cur_node == parent->left) {
-                //场景3-情况1： 叔叔节点为黑色，且当前节点是父节点的左孩子
+            if (cur_node == parent->right) {
+                //场景2-右右
                 parent->color = BLACK;
                 grandparent->color = RED;
                 left_rotate(rb, grandparent);
-                
             } else {
-               //场景3-情况2： 叔叔节点为黑色，且当前节点是父节点的右孩子
-               cur_node->color = BLACK;
-               grandparent->color = RED;
-               left_rotate(rb, parent);
-               right_rotate(rb, grandparent);
+                //场景3-右左
+                right_rotate(rb, parent);
+                fix_double_red(rb, parent);
             }
         }
         
@@ -188,7 +183,7 @@ rbtree_insert(rb_tree_t *rb, int key) {
     else
         parent->right = new_node;
 
-    double_red_adjust(rb, new_node);
+    fix_double_red(rb, new_node);
 
     if (rb->root->color == RED)
         rb->root->color = BLACK;
