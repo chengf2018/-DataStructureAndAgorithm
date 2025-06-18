@@ -1,2 +1,4 @@
 *.out
 *.exe
+rbtree
+.vscode/tasks.json
