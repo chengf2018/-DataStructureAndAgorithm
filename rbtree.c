@@ -469,21 +469,80 @@ rbtree_delete(rb_tree_t *rb, int key) {
 }
 
 
-int
-main(int argc, char ** argv) {
-
-    rb_tree_t *rb = create_rbtree();
-
-    int i;
-    for (i=0; i<10; i++) {
-         rbtree_insert(rb, i);
+// 检查红黑树的基本性质
+void check_rb_properties(rb_node_t *node, int black_count, int *path_black_count) {
+    if (!node) {
+        if (*path_black_count == -1)
+            *path_black_count = black_count;
+        else
+            assert(black_count == *path_black_count); // 所有路径黑色节点数相等
+        return;
     }
+    if (node->color == BLACK) black_count++;
+    // 检查红色节点的子节点必须是黑色
+    if (node->color == RED) {
+        if (node->left) assert(node->left->color == BLACK);
+        if (node->right) assert(node->right->color == BLACK);
+    }
+    check_rb_properties(node->left, black_count, path_black_count);
+    check_rb_properties(node->right, black_count, path_black_count);
+}
 
-    rbtree_delete(rb, 4);
-    rbtree_delete(rb, 5);
-    rbtree_delete(rb, 6);
-    rbtree_delete(rb, 99);
+void test_insert_and_search() {
+    rb_tree_t *rb = create_rbtree();
+    int arr[] = {10, 20, 30, 15, 25, 5, 1, 50, 60, 55};
+    for (int i = 0; i < 10; ++i) {
+        rbtree_insert(rb, arr[i]);
+        rb_node_t *found = rbtree_search(rb, arr[i]);
+        assert(found && found->key == arr[i]);
+    }
+    // 检查根节点为黑色
+    assert(rb->root && rb->root->color == BLACK);
+    // 检查红黑树性质
+    int path_black_count = -1;
+    check_rb_properties(rb->root, 0, &path_black_count);
+    printf("Insert and search test passed.\n");
+}
 
-    printf("test done\n");
+void test_delete() {
+    rb_tree_t *rb = create_rbtree();
+    int arr[] = {10, 20, 30, 15, 25, 5, 1, 50, 60, 55};
+    for (int i = 0; i < 10; ++i) rbtree_insert(rb, arr[i]);
+    // 删除存在的节点
+    assert(rbtree_delete(rb, 10) == 0);
+    assert(rbtree_search(rb, 10) == NULL);
+    assert(rbtree_delete(rb, 1) == 0);
+    assert(rbtree_search(rb, 1) == NULL);
+    // 删除不存在的节点
+    assert(rbtree_delete(rb, 100) == -1);
+    // 检查红黑树性质
+    int path_black_count = -1;
+    check_rb_properties(rb->root, 0, &path_black_count);
+    printf("Delete test passed.\n");
+}
+
+void test_edge_cases() {
+    rb_tree_t *rb = create_rbtree();
+    // 删除空树
+    assert(rbtree_delete(rb, 1) == -1);
+    // 插入重复元素
+    rbtree_insert(rb, 42);
+    rbtree_insert(rb, 42);
+    int count = 0;
+    rb_node_t *p = rb->root;
+    // 统计42出现次数
+    while (p) {
+        if (p->key == 42) count++;
+        p = (p->key < 42) ? p->right : p->left;
+    }
+    assert(count >= 1); // 允许重复插入，但至少有一个
+    printf("Edge cases test passed.\n");
+}
+
+int main() {
+    test_insert_and_search();
+    test_delete();
+    test_edge_cases();
+    printf("All rbtree tests passed!\n");
     return 0;
 }
