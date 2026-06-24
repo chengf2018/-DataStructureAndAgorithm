@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 
+
 using namespace std;
 
 #define K 3 // K degree b+tree
@@ -22,6 +23,8 @@ typedef struct _btree {
   struct _bnode *root;
 } btree;
 
+void dump_btree(btree *bt);
+
 bnode *new_node(int type) {
   bnode *bn = new bnode();
   bn->father = nullptr;
@@ -36,16 +39,31 @@ bnode *new_node(int type) {
   return bn;
 }
 
+#define delete_node(node) do {   \
+std::cout << "!!!delete:" << node << std::endl; \
+std::cout << "[LOCATION] " << __FILE__ << ":" << __LINE__ \
+              << " (" << __FUNCTION__ << ")" << std::endl; \
+delete node; \
+} while (0)
+
+// void delete_node(bnode *node) {
+// 	std::cout << "!!!delete:" << node << std::endl;
+// 	void* buf[64];
+//   int n = backtrace(buf, 64);
+//   backtrace_symbols_fd(buf, n, 1);
+// 	delete node;
+// }
+
 void free_node(bnode *node) {
   if (!node)
     return;
-  // don't need to free (K+1)th node
-  for (int i = 0; i < K; i++) {
+
+  for (int i = 0; i <= K; i++) {
     if (!node->p[i])
       break;
     free_node(node->p[i]);
   }
-  delete node;
+  delete_node(node);
 }
 
 void init_btree(btree *bt) { bt->root = new_node(2); }
@@ -60,7 +78,7 @@ void free_btree(btree *bt) {
 static int search_node_key_insert_pos(bnode *bn, int key) {
   int pos;
   for (pos = 0; pos < bn->key_count; pos++) {
-    if (key > bn->key[pos])
+    if (key < bn->key[pos])
       break;
   }
   return pos;
@@ -83,11 +101,23 @@ static void insert_key_to_internal_node(bnode *bn, int pos, bnode *nn,
     bn->p[i + 1] = bn->p[i];
   }
   bn->key[pos] = key;
-  if (bn->key_count == pos) {
+  // if (bn->key_count == pos) {
     bn->p[pos + 1] = nn;
-  } else {
-    bn->p[pos] = nn;
+  // } else {
+  //   bn->p[pos] = nn;
+  // }
+  bn->key_count++;
+}
+
+static void insert_key_to_internal_node_head(bnode *bn, bnode *nn,
+                                        int key) {
+  assert(bn->key_count < K);
+  for (int i = bn->key_count; i > 0; i--) {
+    bn->key[i] = bn->key[i - 1];
+    bn->p[i + 1] = bn->p[i];
   }
+  bn->key[0] = key;
+  bn->p[0] = nn;
   bn->key_count++;
 }
 
@@ -117,13 +147,15 @@ static void split_internal_node(btree *bt, bnode *bn) {
   for (int i = split_node_pos + 1; i < K; i++) {
     right_new->key[right_count] = bn->key[i];
     right_new->p[right_count] = bn->p[i];
-    bn->p[i + 1] = nullptr;
+    bn->p[i]->father = right_new;
+    bn->p[i] = nullptr;
     bn->key_count--;
     bn->key[i] = 0;
     right_count++;
   }
   // don't forget the last p
-  right_new->p[right_count + 1] = bn->p[K];
+  right_new->p[right_count] = bn->p[K];
+  bn->p[K]->father = right_new;
   bn->p[K] = nullptr;
   right_new->key_count = right_count;
 
@@ -133,7 +165,10 @@ static void split_internal_node(btree *bt, bnode *bn) {
   if (!father) {
     father = new_node(1);
     bt->root = father;
+    father->p[0] = bn;
+    bn->father = father;
   }
+  right_new->father = father;
 
   int split_key = bn->key[split_node_pos];
   // remove split key
@@ -169,6 +204,7 @@ static void split_leaf_node(btree *bt, bnode *bn) {
   // floor(K/2) node stay where it is
   // ceil(K/2) node alloc to where new node
   bnode *right_new = new_node(2);
+  right_new->father = bn->father;
   right_new->last = bn;
   right_new->next = bn->next;
   int right_count = 0;
@@ -182,11 +218,7 @@ static void split_leaf_node(btree *bt, bnode *bn) {
   bn->key_count = K / 2;
   right_new->key_count = right_count;
 
-  // right node inherit left node p[K]
-  // left node p[K] link to right node
-  right_new->p[K] = bn->p[K];
-  bn->p[K] = right_new;
-
+  // leaf node 'next' link to right node
   bn->next = right_new;
 
   if (!bn->father) {
@@ -263,17 +295,31 @@ static void shift_leaf_father_key(bnode *leaf, int key, int set_key) {
 
 static void remove_internal_key(bnode *bn, int pos) {
   assert(pos < bn->key_count);
+  for (int i = pos; i < bn->key_count - 1; i++) {
+    bn->key[i] = bn->key[i + 1];      
+  }
   if (pos == 0) {
-    for (int i = pos; i < bn->key_count - 1; i++) {
-      bn->key[i] = bn->key[i + 1];
-      bn->p[i] = bn->p[i + 1];
+    for (int i = pos; i < bn->key_count; i++) {
+    	bn->p[i] = bn->p[i + 1];
     }
   } else {
-    for (int i = pos; i < bn->key_count - 1; i++) {
-      bn->key[i] = bn->key[i + 1];
-      bn->p[i + 1] = bn->p[i + 2];
+    for (int i = pos+1; i < bn->key_count; i++) {
+    	bn->p[i] = bn->p[i + 1];
     }
   }
+  bn->p[bn->key_count] = nullptr;
+  bn->key_count--;
+}
+
+static void remove_internal_key_tail(bnode *bn, int pos) {
+  assert(pos < bn->key_count);
+  for (int i = pos; i < bn->key_count - 1; i++) {
+    bn->key[i] = bn->key[i + 1];      
+  }
+  for (int i = pos+1; i < bn->key_count; i++) {
+  	bn->p[i] = bn->p[i + 1];
+  }
+  bn->p[bn->key_count] = nullptr;
   bn->key_count--;
 }
 
@@ -296,17 +342,23 @@ static void merge_leaf_to_root(btree *bt) {
     for (int j = 0; j < leaf->key_count; j++) {
       insert_key_to_leaf_node(new_leaf, leaf->key[j], new_leaf->key_count);
     }
-    delete leaf;
+    delete_node(leaf);
   }
-  delete bt->root;
+  delete_node(bt->root);
   bt->root = new_leaf;
 }
 
 static void shift_up_internal_node(btree *bt, bnode *bn) {
   if (bt->root == bn) {
-    if (bn->key_count <= 1) {
-      merge_leaf_to_root(bt);
-    }
+  	if (bn->key_count == 0) {
+  		bnode *root = bt->root;
+  		bt->root = root->p[0];
+  		delete_node(root);
+  		return;
+  	}
+    // if (bn->key_count <= 1) {
+    //   merge_leaf_to_root(bt);
+    // }
     return;
   }
 
@@ -325,7 +377,8 @@ static void shift_up_internal_node(btree *bt, bnode *bn) {
     int brother_last_node_key = brother->key[brother->key_count - 1];
     bnode *brother_last_node_p = brother->p[brother->key_count];
     int father_key = father->key[father_p_pos - 1];
-    insert_key_to_internal_node(bn, 0, brother_last_node_p, father_key);
+    insert_key_to_internal_node_head(bn, brother_last_node_p, father_key);
+    brother_last_node_p->father = bn;
     father->key[father_p_pos - 1] = brother_last_node_key;
     brother->p[brother->key_count] = nullptr;
     brother->key[brother->key_count - 1] = 0;
@@ -339,6 +392,7 @@ static void shift_up_internal_node(btree *bt, bnode *bn) {
     int father_key = father->key[father_p_pos];
     insert_key_to_internal_node(bn, bn->key_count, brother_first_node_p,
                                 father_key);
+    brother_first_node_p->father = bn;
     father->key[father_p_pos] = brother_frist_node_key;
     for (int i = 0; i < brother->key_count - 1; i++) {
       brother->key[i] = brother->key[i + 1];
@@ -359,7 +413,7 @@ static void shift_up_internal_node(btree *bt, bnode *bn) {
       insert_key_to_internal_node(brother, brother->key_count, bn->p[i + 1],
                                   bn->key[i]);
     }
-    delete bn;
+    delete_node(bn);
     if (father->key_count < K / 2) {
       shift_up_internal_node(bt, father);
     }
@@ -367,13 +421,14 @@ static void shift_up_internal_node(btree *bt, bnode *bn) {
     // has right but not enough nodes
     bnode *brother = father->p[father_p_pos + 1];
     int father_key = father->key[father_p_pos];
+
     insert_key_to_internal_node(bn, bn->key_count, brother->p[0], father_key);
-    remove_internal_key(father, father_p_pos);
+    remove_internal_key_tail(father, father_p_pos);
     for (int i = 0; i < brother->key_count; i++) {
       insert_key_to_internal_node(bn, bn->key_count, brother->p[i + 1],
                                   brother->key[i]);
     }
-    delete brother;
+    delete_node(brother);
     if (father->key_count < K / 2) {
       shift_up_internal_node(bt, father);
     }
@@ -401,7 +456,7 @@ static void merge_leaf_node_to_left(btree *bt, bnode *leaf, bnode *brother,
     shift_up_internal_node(bt, father);
   }
   brother->next = leaf->next;
-  delete leaf;
+  delete_node(leaf);
 }
 
 static void merge_leaf_node_to_right(btree *bt, bnode *leaf, bnode *brother,
@@ -425,8 +480,9 @@ static void merge_leaf_node_to_right(btree *bt, bnode *leaf, bnode *brother,
   }
 
   brother->last = leaf->last;
-  delete leaf;
+  delete_node(leaf);
 }
+
 int btree_remove(btree *bt, int key) {
   bnode *leaf = search_insert_leaf(bt, key);
   int pos = search_node_key(leaf, key);
@@ -485,15 +541,12 @@ std::vector<int> btree_find(btree *bt, int left, int right) {
   vector<int> result;
   while (bn) {
     if (bn->btype == 2) {
-      int not_match = 0;
+      int not_match = 1;
       for (int i = 0; i < bn->key_count; i++) {
         int key = bn->key[i];
         if (key >= left && key <= right) {
           result.push_back(key);
-          std::cout << "find:" << key << std::endl;
-        } else {
-          not_match = 1;
-          break;
+          not_match = 0;
         }
       }
       if (not_match) {
@@ -517,6 +570,41 @@ std::vector<int> btree_find(btree *bt, int left, int right) {
   return result;
 }
 
+static void dump_bnode(bnode *bn) {
+	if (bn == nullptr) {
+		std::cout << "error! bn is nil" << std::endl;
+		return;
+	}
+	std::cout << "------------------" << std::endl;
+	std::cout << "bnode:" << bn << std::endl;
+	std::cout << "father:" << bn->father << std::endl;
+	std::cout << "last:" << bn->last << std::endl;
+	std::cout << "next:" << bn->next << std::endl;
+	std::cout << "key count:" << bn->key_count << std::endl;
+	std::cout << "btype:" << bn->btype << std::endl;
+	std::cout << "keys:[";
+	for (int i=0; i<bn->key_count; i++) {
+		std::cout << bn->key[i] << ",";
+	}
+	std::cout << "]" << std::endl;
+	std::cout << "points:[";
+	for (int i=0; i<=K; i++) {
+		std::cout << bn->p[i] << ",";
+	}
+	std::cout << "]" << std::endl;
+
+	if (bn->btype == 1) {
+		for (int i=0; i<=bn->key_count; i++) {
+			dump_bnode(bn->p[i]);
+		}
+	}
+}
+
+void dump_btree(btree *bt) {
+	bnode *bn = bt->root;
+	dump_bnode(bn);
+}
+
 int main(int argc, char **argv) {
   btree bt;
   init_btree(&bt);
@@ -524,11 +612,24 @@ int main(int argc, char **argv) {
   btree_insert(&bt, 2);
   btree_insert(&bt, 3);
   btree_insert(&bt, -123);
+  btree_insert(&bt, 4);
+  btree_insert(&bt, 5);
+  btree_insert(&bt, 6);
+  btree_insert(&bt, 7);
+  btree_insert(&bt, 8);
+  btree_insert(&bt, 9);
+  btree_insert(&bt, 10);
+
+  btree_remove(&bt, 9);
+  btree_remove(&bt, 10);
+  dump_btree(&bt);
+
+  std::cout << "---find result:---" << std::endl;
   std::vector<int> result = btree_find(&bt, 1, 3);
   for (auto &i : result) {
     std::cout << i << std::endl;
   }
   free_btree(&bt);
-  std::cout << "test";
+  std::cout << "finish" << std::endl;
   return 0;
 }
