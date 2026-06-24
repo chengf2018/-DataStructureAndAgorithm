@@ -101,12 +101,9 @@ static void insert_key_to_internal_node(bnode *bn, int pos, bnode *nn,
     bn->p[i + 1] = bn->p[i];
   }
   bn->key[pos] = key;
-  // if (bn->key_count == pos) {
-    bn->p[pos + 1] = nn;
-  // } else {
-  //   bn->p[pos] = nn;
-  // }
+  bn->p[pos + 1] = nn;
   bn->key_count++;
+  nn->father = bn;
 }
 
 static void insert_key_to_internal_node_head(bnode *bn, bnode *nn,
@@ -325,7 +322,7 @@ static void remove_internal_key_tail(bnode *bn, int pos) {
 
 static int search_internal_node_p(bnode *bn, bnode *p) {
   assert(bn && p);
-  for (int i = 0; i < bn->key_count; i++) {
+  for (int i = 0; i <= bn->key_count; i++) {
     if (bn->p[i] == p) {
       return i;
     }
@@ -366,6 +363,11 @@ static void shift_up_internal_node(btree *bt, bnode *bn) {
   assert(father);
   // find father index
   int father_p_pos = search_internal_node_p(father, bn);
+if (father_p_pos == -1) {
+	dump_btree(bt);
+	std::cout << "father:" << father << std::endl;
+	std::cout << "bn:" << bn << std::endl;
+}
   assert(father_p_pos != -1);
 
   // prioritize borrowing from brother nodes
@@ -408,11 +410,12 @@ static void shift_up_internal_node(btree *bt, bnode *bn) {
     insert_key_to_internal_node(brother, brother->key_count, bn->p[0],
                                 father_key);
     father->p[father_p_pos] = father->p[father_p_pos - 1];
-    remove_internal_key(father, father_p_pos - 1);
+    remove_internal_key_tail(father, father_p_pos - 1);
     for (int i = 0; i < bn->key_count; i++) {
       insert_key_to_internal_node(brother, brother->key_count, bn->p[i + 1],
                                   bn->key[i]);
     }
+    brother->next = bn->next;
     delete_node(bn);
     if (father->key_count < K / 2) {
       shift_up_internal_node(bt, father);
@@ -428,6 +431,7 @@ static void shift_up_internal_node(btree *bt, bnode *bn) {
       insert_key_to_internal_node(bn, bn->key_count, brother->p[i + 1],
                                   brother->key[i]);
     }
+    bn->next = brother->next;
     delete_node(brother);
     if (father->key_count < K / 2) {
       shift_up_internal_node(bt, father);
@@ -447,16 +451,17 @@ static void merge_leaf_node_to_left(btree *bt, bnode *leaf, bnode *brother,
       insert_key_to_leaf_node(brother, leaf->key[i], brother->key_count);
     }
     int remove_pos = search_node_key(father, leaf->key[0]);
-    remove_internal_key(father, remove_pos);
+    remove_internal_key_tail(father, remove_pos);
   } else {
     int remove_pos = search_node_key(father, remove_key);
-    remove_internal_key(father, remove_pos);
-  }
-  if (father->key_count < K / 2) {
-    shift_up_internal_node(bt, father);
+    remove_internal_key_tail(father, remove_pos);
   }
   brother->next = leaf->next;
   delete_node(leaf);
+
+  if (father->key_count < K / 2) {
+    shift_up_internal_node(bt, father);
+  }
 }
 
 static void merge_leaf_node_to_right(btree *bt, bnode *leaf, bnode *brother,
@@ -475,12 +480,12 @@ static void merge_leaf_node_to_right(btree *bt, bnode *leaf, bnode *brother,
     insert_key_to_leaf_node(brother, leaf->key[i], brother->key_count);
   }
 
+  brother->last = leaf->last;
+  delete_node(leaf);
+
   if (father->key_count < K / 2) {
     shift_up_internal_node(bt, father);
   }
-
-  brother->last = leaf->last;
-  delete_node(leaf);
 }
 
 int btree_remove(btree *bt, int key) {
@@ -622,6 +627,15 @@ int main(int argc, char **argv) {
 
   btree_remove(&bt, 9);
   btree_remove(&bt, 10);
+  btree_remove(&bt, 8);
+  // btree_remove(&bt, 7);
+  // btree_remove(&bt, 6);
+  // btree_remove(&bt, 5);
+  // btree_remove(&bt, 4);
+  // btree_remove(&bt, 3);
+  // btree_remove(&bt, 2);
+  // btree_remove(&bt, 1);
+  // btree_remove(&bt, -123);
   dump_btree(&bt);
 
   std::cout << "---find result:---" << std::endl;
