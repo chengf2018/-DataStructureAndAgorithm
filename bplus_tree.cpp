@@ -5,7 +5,7 @@
 
 using namespace std;
 
-#define K 3 // K degree b+tree
+#define K 11 // K degree b+tree
 
 typedef struct _bnode {
   struct _bnode *father;
@@ -41,7 +41,7 @@ bnode *new_node(int type) {
 #define delete_node(node)                                                      \
   do {                                                                         \
     if (is_debug) {                                                            \
-      std::cout << "!!!delete node:" << node << std::endl;                          \
+      std::cout << "!!!delete node:" << node << std::endl;                     \
       std::cout << "[LOCATION] " << __FILE__ << ":" << __LINE__ << " ("        \
                 << __FUNCTION__ << ")" << std::endl;                           \
     }                                                                          \
@@ -71,28 +71,69 @@ void free_btree(btree *bt) {
 
 // return key pos or insert pos
 static int search_node_key_insert_pos(bnode *bn, int key) {
+#if K > 10
+  int l = 0, r = bn->key_count;
+  while (l < r) {
+    int mid = (l + r) / 2;
+    if (key < bn->key[mid]) {
+      r = mid;
+    } else {
+      l = mid + 1;
+    }
+  }
+  return l;
+#else
   int pos;
   for (pos = 0; pos < bn->key_count; pos++) {
     if (key < bn->key[pos])
       break;
   }
   return pos;
+#endif
 }
 
 static int search_internal_insert_pos(bnode *bn, int key) {
-	int pos = bn->key_count;
-	while (pos > 0 && key < bn->key[pos - 1]) {
-		pos--;
-	}
-	return pos;
+#if K > 10
+  int l = 0, r = bn->key_count;
+  while (l < r) {
+    int mid = (l + r) / 2;
+    if (key < bn->key[mid]) {
+      r = mid;
+    } else {
+      l = mid + 1;
+    }
+  }
+  return l;
+#else
+  int pos = bn->key_count;
+  while (pos > 0 && key < bn->key[pos - 1]) {
+    pos--;
+  }
+  return pos;
+#endif
 }
 
 static int search_node_key(bnode *bn, int key) {
+#if K > 10
+  int l = 0, r = bn->key_count;
+  while (l < r) {
+    int mid = (l + r) / 2;
+    if (key < bn->key[mid]) {
+      r = mid;
+    } else if (key == bn->key[mid]) {
+      return mid;
+    } else {
+      l = mid + 1;
+    }
+  }
+  return -1;
+#else
   for (int i = 0; i < bn->key_count; i++) {
     if (key == bn->key[i])
       return i;
   }
   return -1;
+#endif
 }
 
 static void insert_key_to_internal_node(bnode *bn, int pos, bnode *nn,
@@ -432,7 +473,7 @@ static void merge_leaf_node_to_left(btree *bt, bnode *leaf, bnode *brother,
     remove_internal_key_tail(father, remove_pos);
   }
   if (leaf->next) {
-  	leaf->next->last = brother;
+    leaf->next->last = brother;
   }
   brother->next = leaf->next;
   delete_node(leaf);
@@ -459,7 +500,7 @@ static void merge_leaf_node_to_right(btree *bt, bnode *leaf, bnode *brother,
   shift_leaf_father_key(leaf, remove_key, brother->key[0]);
 
   if (leaf->last) {
-  	leaf->last->next = brother;
+    leaf->last->next = brother;
   }
   brother->last = leaf->last;
   delete_node(leaf);
@@ -491,7 +532,8 @@ int btree_remove(btree *bt, int key) {
     // brother have enough key?
     bnode *brother = nullptr;
     bnode *father = leaf->father;
-    if (leaf->next && leaf->next->father == father && leaf->next->key_count > K / 2) {
+    if (leaf->next && leaf->next->father == father &&
+        leaf->next->key_count > K / 2) {
       brother = leaf->next;
       int f_pos = search_node_key(father, brother->key[0]);
       assert(f_pos != -1);
@@ -503,7 +545,8 @@ int btree_remove(btree *bt, int key) {
       if (leaf->key_count == 1) {
         shift_leaf_father_key(leaf, key, key_0);
       }
-    } else if (leaf->last && leaf->last->father == father && leaf->last->key_count > K / 2) {
+    } else if (leaf->last && leaf->last->father == father &&
+               leaf->last->key_count > K / 2) {
       brother = leaf->last;
       insert_key_to_leaf_node(leaf, brother->key[brother->key_count - 1], 0);
       remove_leaf_key(brother, brother->key_count - 1);
@@ -547,8 +590,8 @@ std::vector<int> btree_find(btree *bt, int left, int right) {
           bn = bn->p[i];
           break;
         } else if (left == key) {
-        	bn = bn->p[i+1];
-        	break;
+          bn = bn->p[i + 1];
+          break;
         }
       }
       if (i == bn->key_count) {
@@ -609,7 +652,7 @@ int main(int argc, char **argv) {
   dump_btree(&bt);
 
   std::cout << "---find result:---" << std::endl;
-  std::vector<int> result = btree_find(&bt, 1, 21);
+  std::vector<int> result = btree_find(&bt, 1, 100);
   for (auto &i : result) {
     std::cout << i << std::endl;
   }
