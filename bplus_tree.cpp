@@ -154,7 +154,9 @@ static void insert_key_to_internal_node_head(bnode *bn, bnode *nn, int key) {
   assert(bn->key_count < K);
   for (int i = bn->key_count; i > 0; i--) {
     bn->key[i] = bn->key[i - 1];
-    bn->p[i + 1] = bn->p[i];
+  }
+  for (int i = bn->key_count + 1; i > 0; i--) {
+    bn->p[i] = bn->p[i - 1];
   }
   bn->key[0] = key;
   bn->p[0] = nn;
@@ -570,16 +572,15 @@ std::vector<int> btree_find(btree *bt, int left, int right) {
   vector<int> result;
   while (bn) {
     if (bn->btype == 2) {
-      int not_match = 1;
+      // max key less than left, directly break
+      if (bn->key[bn->key_count - 1] < left) {
+        break;
+      }
       for (int i = 0; i < bn->key_count; i++) {
         int key = bn->key[i];
         if (key >= left && key <= right) {
           result.push_back(key);
-          not_match = 0;
         }
-      }
-      if (not_match) {
-        break;
       }
       bn = bn->next;
     } else {
@@ -640,19 +641,15 @@ void dump_btree(btree *bt) {
 int main(int argc, char **argv) {
   btree bt;
   init_btree(&bt);
-
-  for (int i = 1; i <= 20; ++i)
-    btree_insert(&bt, i);
-  btree_remove(&bt, 10);
-  btree_remove(&bt, 11);
-  btree_remove(&bt, 12);
-  btree_remove(&bt, 9);
-  btree_insert(&bt, 21);
+  btree_insert(&bt, 1);
+  btree_insert(&bt, 2);
+  btree_insert(&bt, 10);
+  btree_insert(&bt, 11);
   std::cout << "-------dump btree-------" << std::endl;
   dump_btree(&bt);
 
   std::cout << "---find result:---" << std::endl;
-  std::vector<int> result = btree_find(&bt, 1, 100);
+  std::vector<int> result = btree_find(&bt, 3, 10);
   for (auto &i : result) {
     std::cout << i << std::endl;
   }
