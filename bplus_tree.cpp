@@ -28,7 +28,7 @@ bnode *new_node(int type) {
   bn->father = nullptr;
   bn->next = nullptr;
   bn->last = nullptr;
-  memset(bn->key, 0, sizeof(bn->key) * sizeof(int));
+  memset(bn->key, 0, sizeof(bn->key));
   bn->key_count = 0;
   for (int i = 0; i < K + 1; i++) {
     bn->p[i] = nullptr;
@@ -41,7 +41,7 @@ bnode *new_node(int type) {
 #define delete_node(node)                                                      \
   do {                                                                         \
     if (is_debug) {                                                            \
-      std::cout << "!!!delete:" << node << std::endl;                          \
+      std::cout << "!!!delete node:" << node << std::endl;                          \
       std::cout << "[LOCATION] " << __FILE__ << ":" << __LINE__ << " ("        \
                 << __FUNCTION__ << ")" << std::endl;                           \
     }                                                                          \
@@ -56,6 +56,7 @@ void free_node(bnode *node) {
     if (!node->p[i])
       break;
     free_node(node->p[i]);
+    node->p[i] = nullptr;
   }
   delete_node(node);
 }
@@ -76,6 +77,14 @@ static int search_node_key_insert_pos(bnode *bn, int key) {
       break;
   }
   return pos;
+}
+
+static int search_internal_insert_pos(bnode *bn, int key) {
+	int pos = bn->key_count;
+	while (pos > 0 && key < bn->key[pos - 1]) {
+		pos--;
+	}
+	return pos;
 }
 
 static int search_node_key(bnode *bn, int key) {
@@ -112,7 +121,7 @@ static void insert_key_to_internal_node_head(bnode *bn, bnode *nn, int key) {
 }
 
 static void insert_key_to_leaf_node(bnode *bn, int key, int pos) {
-  assert(pos >= 0 && pos < K);
+  assert(pos >= 0 && pos <= bn->key_count);
   if (pos < bn->key_count) {
     for (int i = bn->key_count; i > pos; i--) {
       bn->key[i] = bn->key[i - 1];
@@ -124,17 +133,17 @@ static void insert_key_to_leaf_node(bnode *bn, int key, int pos) {
 
 static void split_internal_node(btree *bt, bnode *bn) {
   assert(bn->key_count == K);
-  // split node = ceil(K / 2)
-  int split_node_pos = (K + 1) / 2 - 1;
+  // mid node = floor(K / 2)
+  int mid = K / 2;
   // left nodes stay where it is
   // right nodes alloc to where new node
-  // split node insert to where father node
+  // mid node insert to where father node
   // if not have father node, create new father
   bnode *right_new = new_node(1);
   right_new->last = bn;
   right_new->next = bn->next;
   int right_count = 0;
-  for (int i = split_node_pos + 1; i < K; i++) {
+  for (int i = mid + 1; i < K; i++) {
     right_new->key[right_count] = bn->key[i];
     right_new->p[right_count] = bn->p[i];
     bn->p[i]->father = right_new;
@@ -160,13 +169,13 @@ static void split_internal_node(btree *bt, bnode *bn) {
   }
   right_new->father = father;
 
-  int split_key = bn->key[split_node_pos];
+  int mid_key = bn->key[mid];
   // remove split key
-  bn->key[split_node_pos] = 0;
+  bn->key[mid] = 0;
   bn->key_count--;
 
-  int insert_pos = search_node_key_insert_pos(father, split_key);
-  insert_key_to_internal_node(father, insert_pos, right_new, split_key);
+  int insert_pos = search_internal_insert_pos(father, mid_key);
+  insert_key_to_internal_node(father, insert_pos, right_new, mid_key);
   // if father node is full after insert, recursion split it
   if (father->key_count == K) {
     split_internal_node(bt, father);
@@ -176,7 +185,7 @@ static void split_internal_node(btree *bt, bnode *bn) {
 static void insert_leaf_node_to_internal(btree *bt, bnode *bn, bnode *nn) {
   assert(bn->btype == 1);
   assert(nn->key_count > 0);
-  int pos = search_node_key_insert_pos(bn, nn->key[0]);
+  int pos = search_internal_insert_pos(bn, nn->key[0]);
   insert_key_to_internal_node(bn, pos, nn, nn->key[0]);
 
   // is full?
@@ -283,19 +292,13 @@ static void shift_leaf_father_key(bnode *leaf, int key, int set_key) {
   }
 }
 
-static void remove_internal_key(bnode *bn, int pos) {
-  assert(pos < bn->key_count);
-  for (int i = pos; i < bn->key_count - 1; i++) {
+static void remove_internal_key_head(bnode *bn) {
+  assert(bn->key_count > 0);
+  for (int i = 0; i < bn->key_count - 1; i++) {
     bn->key[i] = bn->key[i + 1];
   }
-  if (pos == 0) {
-    for (int i = pos; i < bn->key_count; i++) {
-      bn->p[i] = bn->p[i + 1];
-    }
-  } else {
-    for (int i = pos + 1; i < bn->key_count; i++) {
-      bn->p[i] = bn->p[i + 1];
-    }
+  for (int i = 0; i < bn->key_count; i++) {
+    bn->p[i] = bn->p[i + 1];
   }
   bn->p[bn->key_count] = nullptr;
   bn->key_count--;
@@ -428,6 +431,9 @@ static void merge_leaf_node_to_left(btree *bt, bnode *leaf, bnode *brother,
     int remove_pos = search_node_key(father, remove_key);
     remove_internal_key_tail(father, remove_pos);
   }
+  if (leaf->next) {
+  	leaf->next->last = brother;
+  }
   brother->next = leaf->next;
   delete_node(leaf);
 
@@ -444,16 +450,17 @@ static void merge_leaf_node_to_right(btree *bt, bnode *leaf, bnode *brother,
   // what kind of situation need to merge to right? when remove key in first
   // leaf
   int remove_pos = search_node_key(brother, brother->key[0]);
-  // assert(remove_pos != -1);
   assert(remove_pos == 0);
-  remove_internal_key(father, remove_pos);
+  remove_internal_key_head(father);
 
   for (int i = leaf->key_count - 1; i >= 0; i--) {
     insert_key_to_leaf_node(brother, leaf->key[i], 0);
   }
   shift_leaf_father_key(leaf, remove_key, brother->key[0]);
-  std::cout << "--------" << leaf << "," << remove_key << "," << brother->key[0]
-            << std::endl;
+
+  if (leaf->last) {
+  	leaf->last->next = brother;
+  }
   brother->last = leaf->last;
   delete_node(leaf);
 
@@ -484,7 +491,7 @@ int btree_remove(btree *bt, int key) {
     // brother have enough key?
     bnode *brother = nullptr;
     bnode *father = leaf->father;
-    if (leaf->next and leaf->next->key_count > K / 2) {
+    if (leaf->next && leaf->next->father == father && leaf->next->key_count > K / 2) {
       brother = leaf->next;
       int f_pos = search_node_key(father, brother->key[0]);
       assert(f_pos != -1);
@@ -496,7 +503,7 @@ int btree_remove(btree *bt, int key) {
       if (leaf->key_count == 1) {
         shift_leaf_father_key(leaf, key, key_0);
       }
-    } else if (leaf->last and leaf->last->key_count > K / 2) {
+    } else if (leaf->last && leaf->last->father == father && leaf->last->key_count > K / 2) {
       brother = leaf->last;
       insert_key_to_leaf_node(leaf, brother->key[brother->key_count - 1], 0);
       remove_leaf_key(brother, brother->key_count - 1);
@@ -504,9 +511,9 @@ int btree_remove(btree *bt, int key) {
     } else {
       // brother not enough key
       // merge it
-      if (leaf->last)
+      if (leaf->last && leaf->last->father == father)
         merge_leaf_node_to_left(bt, leaf, leaf->last, key);
-      else if (leaf->next)
+      else if (leaf->next && leaf->next->father == father)
         merge_leaf_node_to_right(bt, leaf, leaf->next, key);
       else
         assert(false);
@@ -536,9 +543,12 @@ std::vector<int> btree_find(btree *bt, int left, int right) {
       int i = 0;
       for (i = 0; i < bn->key_count; i++) {
         int key = bn->key[i];
-        if (key > left) {
+        if (left < key) {
           bn = bn->p[i];
           break;
+        } else if (left == key) {
+        	bn = bn->p[i+1];
+        	break;
         }
       }
       if (i == bn->key_count) {
@@ -587,43 +597,19 @@ void dump_btree(btree *bt) {
 int main(int argc, char **argv) {
   btree bt;
   init_btree(&bt);
-  // btree_insert(&bt, 1);
-  // btree_insert(&bt, 2);
-  // btree_insert(&bt, 3);
-  // btree_insert(&bt, -123);
-  // btree_insert(&bt, 4);
-  // btree_insert(&bt, 5);
-  // btree_insert(&bt, 6);
-  // btree_insert(&bt, 7);
-  // btree_insert(&bt, 8);
-  // btree_insert(&bt, 9);
-  // btree_insert(&bt, 10);
-  //
-  // btree_remove(&bt, -123);
-  // btree_remove(&bt, 1);
-  // btree_remove(&bt, 2);
-  // btree_remove(&bt, 3);
-  // btree_remove(&bt, 4);
-  // btree_remove(&bt, 5);
-  // btree_remove(&bt, 6);
-  // btree_remove(&bt, 7);
-  // btree_remove(&bt, 9);
-  // btree_remove(&bt, 8);
-  // btree_remove(&bt, 10);
 
   for (int i = 1; i <= 20; ++i)
     btree_insert(&bt, i);
   btree_remove(&bt, 10);
   btree_remove(&bt, 11);
   btree_remove(&bt, 12);
-  // 继续删除使内部节点 key_count < K/2，触发 shift_up_internal_node
   btree_remove(&bt, 9);
-  // btree_insert(&bt, 21);
+  btree_insert(&bt, 21);
   std::cout << "-------dump btree-------" << std::endl;
   dump_btree(&bt);
 
   std::cout << "---find result:---" << std::endl;
-  std::vector<int> result = btree_find(&bt, 1, 20);
+  std::vector<int> result = btree_find(&bt, 1, 21);
   for (auto &i : result) {
     std::cout << i << std::endl;
   }
