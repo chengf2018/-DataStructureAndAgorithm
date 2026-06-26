@@ -572,7 +572,7 @@ std::vector<int> btree_find(btree *bt, int left, int right) {
   vector<int> result;
   while (bn) {
     if (bn->btype == 2) {
-      // max key less than left, directly break
+      // first_key greater than right, directly break
     	int first_key = bn->key[0];
       if (first_key > right) {
         break;
