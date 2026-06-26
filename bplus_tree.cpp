@@ -5,7 +5,7 @@
 
 using namespace std;
 
-#define K 11 // K degree b+tree
+#define K 3 // K degree b+tree
 
 typedef struct _bnode {
   struct _bnode *father;
@@ -573,9 +573,11 @@ std::vector<int> btree_find(btree *bt, int left, int right) {
   while (bn) {
     if (bn->btype == 2) {
       // max key less than left, directly break
-      if (bn->key[bn->key_count - 1] < left) {
+    	int first_key = bn->key[0];
+      if (first_key > right) {
         break;
       }
+
       for (int i = 0; i < bn->key_count; i++) {
         int key = bn->key[i];
         if (key >= left && key <= right) {
@@ -584,8 +586,8 @@ std::vector<int> btree_find(btree *bt, int left, int right) {
       }
       bn = bn->next;
     } else {
-      int i = 0;
-      for (i = 0; i < bn->key_count; i++) {
+      int i = 0,n = bn->key_count;
+      for (i = 0; i < n; i++) {
         int key = bn->key[i];
         if (left < key) {
           bn = bn->p[i];
@@ -595,7 +597,7 @@ std::vector<int> btree_find(btree *bt, int left, int right) {
           break;
         }
       }
-      if (i == bn->key_count) {
+      if (i == n) {
         bn = bn->p[bn->key_count];
       }
     }
